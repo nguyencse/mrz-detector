@@ -9,7 +9,8 @@ import imutils
 import cv2
 import math
 import os
-
+import pytesseract
+from PIL import Image
 
 def sortBox(box):
 	def sorter(x): return (x[0], x[1])
@@ -56,6 +57,13 @@ def subimage(image, minRect):
 
 	return image
 
+def recognizeText(image):
+	print('roi size before = ', image.shape)
+	# gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+	# gray = cv2.GaussianBlur(gray, (3, 3), 0)
+	# gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+	text = pytesseract.image_to_string(image, config='-c tessedit_char_whitelist=0123456789QWERTYUIOPASDFGHJKLZXCVBNM<')
+	return text
 
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
@@ -261,8 +269,11 @@ for imagePath in paths.list_images(args["images"]):
 		roi = subimage(image, minRect)
 		cv2.drawContours(image, [box], 0, (0, 255, 0), 1)
 
+		mrz = recognizeText(roi)
+		print(mrz)
+
 		# show the output images
-		cv2.imshow("Image", image)
+		# cv2.imshow("Image", image)
 		cv2.imshow("ROI", roi)
 		cv2.waitKey(0)
 		cv2.destroyAllWindows()
