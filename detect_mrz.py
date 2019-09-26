@@ -59,8 +59,7 @@ def subimage(image, minRect):
 
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
-ap.add_argument("-i", "--images", required=True,
-				help="path to images directory")
+ap.add_argument("-i", "--images", required=True,help="path to images directory")
 args = vars(ap.parse_args())
 
 # initialize a rectangular and square structuring kernel
