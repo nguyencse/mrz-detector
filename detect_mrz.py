@@ -118,9 +118,9 @@ for imagePath in paths.list_images(args["images"]):
 	# during thresholding, it's possible that border pixels were
 	# included in the thresholding, so let's set 5% of the left and
 	# right borders to zero
-	p = int(image.shape[1] * 0.01)
+	p = int(thresh.shape[1] * 0.01)
 	thresh[:, 0:p] = 0
-	thresh[:, image.shape[1] - p:] = 0
+	thresh[:, thresh.shape[1] - p:] = 0
 
 	# print("image.shape = ", image.shape)
 	# print("p = ", p)
@@ -273,7 +273,7 @@ for imagePath in paths.list_images(args["images"]):
 		print(mrz)
 
 		# show the output images
-		# cv2.imshow("Image", image)
+		cv2.imshow("Image", image)
 		cv2.imshow("ROI", roi)
 		cv2.waitKey(0)
 		cv2.destroyAllWindows()
