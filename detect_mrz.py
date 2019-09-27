@@ -50,8 +50,8 @@ def subimage(image, minRect):
 	matrix = cv2.getRotationMatrix2D(center=center, angle=theta, scale=1)
 	image = cv2.warpAffine(src=image, M=matrix, dsize=shape)
 
-	x = int(center[0] - width/2)
-	y = int(center[1] - height/2)
+	x = max(int(center[0] - width/2), 0)
+	y = max(int(center[1] - height/2), 0)
 
 	image = image[y:y+height, x:x+width]
 
@@ -125,7 +125,7 @@ for imagePath in paths.list_images(args["images"]):
 	# print("image.shape = ", image.shape)
 	# print("p = ", p)
 
-	# cv2.imshow("Test", thresh)
+	cv2.imshow("Test", thresh)
 
 	# denoise - clear all connections from mrz to others horizontal
 	for i in range(thresh.shape[0]):  # traverses through height of the image
@@ -146,7 +146,7 @@ for imagePath in paths.list_images(args["images"]):
 	denoiseKernel = np.ones((3, 3), np.uint8)
 	thresh = cv2.dilate(thresh, denoiseKernel, iterations=4)
 
-	# cv2.imshow("Denoise", thresh)
+	cv2.imshow("Denoise", thresh)
 
 	# find contours in the thresholded image and sort them by their size
 	cnts = cv2.findContours(
@@ -269,8 +269,8 @@ for imagePath in paths.list_images(args["images"]):
 		roi = subimage(image, minRect)
 		cv2.drawContours(image, [box], 0, (0, 255, 0), 1)
 
-		mrz = recognizeText(roi)
-		print(mrz)
+		# mrz = recognizeText(roi)
+		# print(mrz)
 
 		# show the output images
 		cv2.imshow("Image", image)
