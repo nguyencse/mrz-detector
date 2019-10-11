@@ -11,6 +11,7 @@ import math
 import os
 import pytesseract
 from PIL import Image
+import utils
 
 def sortBox(box):
 	def sorter(x): return (x[0], x[1])
@@ -56,14 +57,6 @@ def subimage(image, minRect):
 	image = image[y:y+height, x:x+width]
 
 	return image
-
-def recognizeText(image):
-	print('roi size before = ', image.shape)
-	# gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-	# gray = cv2.GaussianBlur(gray, (3, 3), 0)
-	# gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-	text = pytesseract.image_to_string(image, config='-c tessedit_char_whitelist=0123456789QWERTYUIOPASDFGHJKLZXCVBNM<')
-	return text
 
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
@@ -125,7 +118,7 @@ for imagePath in paths.list_images(args["images"]):
 	# print("image.shape = ", image.shape)
 	# print("p = ", p)
 
-	cv2.imshow("Test", thresh)
+	# cv2.imshow("Test", thresh)
 
 	# denoise - clear all connections from mrz to others horizontal
 	for i in range(thresh.shape[0]):  # traverses through height of the image
@@ -146,7 +139,7 @@ for imagePath in paths.list_images(args["images"]):
 	denoiseKernel = np.ones((3, 3), np.uint8)
 	thresh = cv2.dilate(thresh, denoiseKernel, iterations=4)
 
-	cv2.imshow("Denoise", thresh)
+	# cv2.imshow("Denoise", thresh)
 
 	# find contours in the thresholded image and sort them by their size
 	cnts = cv2.findContours(
@@ -273,7 +266,29 @@ for imagePath in paths.list_images(args["images"]):
 		# print(mrz)
 
 		# show the output images
-		cv2.imshow("Image", image)
-		cv2.imshow("ROI", roi)
+		# cv2.imshow("Image", image)
+		# cv2.imshow("ROI", roi)
+		# print('recognized roi = ', utils.recognizeText(roi))
+		# cv2.imwrite('./rois/roi' + str(counter) +'.jpg', roi)
+		# print('recognized roi = ', utils.recognizeText(roi))
+
+		# sharpened_image = utils.unsharp_mask(roi)
+		# cv2.imwrite('sharpened-image.jpg', sharpened_image)
+		# print('recognized sharpened = ', utils.recognizeText(sharpened_image))
+
+		# unshadow_image = utils.remove_shadow(roi); 
+		# cv2.imwrite('unshadow-image.jpg', unshadow_image)
+		# print('recognized shadow = ', utils.recognizeText(unshadow_image))
+
+		# meanc = utils.mean_c(roi)
+		# cv2.imwrite('meanc-image.jpg', meanc)
+		# print('recognized meanc = ', utils.recognizeText(meanc))
+
+		# remove_noise = utils.remove_noise(roi)
+		# cv2.imwrite('remove-noise-image.jpg', remove_noise)
+		# print('remove noise = ', utils.recognizeText(remove_noise))
+
+		# cv2.imshow('remove_noise', remove_noise)
+
 		cv2.waitKey(0)
 		cv2.destroyAllWindows()
