@@ -13,6 +13,30 @@ import pytesseract
 from PIL import Image
 import utils
 
+def rotateBound(image, angle):
+    # grab the dimensions of the image and then determine the
+    # center
+    (h, w) = image.shape[:2]
+    (cX, cY) = (w // 2, h // 2)
+ 
+    # grab the rotation matrix (applying the negative of the
+    # angle to rotate clockwise), then grab the sine and cosine
+    # (i.e., the rotation components of the matrix)
+    M = cv2.getRotationMatrix2D((cX, cY), -angle, 1.0)
+    cos = np.abs(M[0, 0])
+    sin = np.abs(M[0, 1])
+ 
+    # compute the new bounding dimensions of the image
+    nW = int((h * sin) + (w * cos))
+    nH = int((h * cos) + (w * sin))
+ 
+    # adjust the rotation matrix to take into account translation
+    M[0, 2] += (nW / 2) - cX
+    M[1, 2] += (nH / 2) - cY
+ 
+    # perform the actual rotation and return the image
+    return cv2.warpAffine(image, M, (nW, nH))
+
 def sortBox(box):
 	def sorter(x): return (x[0], x[1])
 	newBox = sorted(box.copy(), key=sorter)
@@ -135,6 +159,8 @@ for imagePath in paths.list_images(args["images"]):
 				startIndex = j
 				countWhite = 0
 
+	cv2.imshow("thresh-after", thresh)
+
 	# connect nearby contours
 	denoiseKernel = np.ones((3, 3), np.uint8)
 	thresh = cv2.dilate(thresh, denoiseKernel, iterations=4)
@@ -144,6 +170,7 @@ for imagePath in paths.list_images(args["images"]):
 	# find contours in the thresholded image and sort them by their size
 	cnts = cv2.findContours(
 		thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
 	cnts = imutils.grab_contours(cnts)
 	cnts = sorted(cnts, key=lambda ctr: cv2.boundingRect(ctr)[2], reverse=True)
 
@@ -152,6 +179,7 @@ for imagePath in paths.list_images(args["images"]):
 		(x, y, w, h) = cv2.boundingRect(c)
 		if w / h > 6.0:
 			newCnts.append(c)
+		print('width:', w)
 	cnts = newCnts
 
 	print('len(cnts) = ', len(cnts))
@@ -208,18 +236,18 @@ for imagePath in paths.list_images(args["images"]):
 			else:
 				box = np.array([
 					box0[0],
-					box0[2],
+					box0[1],
 					box0[3],
-					box0[1]
+					box0[2]
 				])
 				box = np.int0(box)
 		else:
 			print('draw box0 = ', box0)
 			box = np.array([
 				box0[0],
-				box0[2],
+				box0[1],
 				box0[3],
-				box0[1]
+				box0[2]
 			])
 
 		outerBox = sortBox(box.copy())
@@ -262,12 +290,9 @@ for imagePath in paths.list_images(args["images"]):
 		roi = subimage(image, minRect)
 		cv2.drawContours(image, [box], 0, (0, 255, 0), 1)
 
-		# mrz = recognizeText(roi)
-		# print(mrz)
-
-		# show the output images
-		# cv2.imshow("Image", image)
-		# cv2.imshow("ROI", roi)
+		# # show the output images
+		cv2.imshow("Image", image)
+		cv2.imshow("ROI", roi)
 		# print('recognized roi = ', utils.recognizeText(roi))
 		# cv2.imwrite('./rois/roi' + str(counter) +'.jpg', roi)
 		# print('recognized roi = ', utils.recognizeText(roi))
