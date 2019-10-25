@@ -15,77 +15,7 @@ Mat findMRZ(Mat original) {
     Mat img = original.clone();
     img = resizeImage(img, img.cols * 600 / img.rows, 600);
     
-    Mat gray = img.clone();
-    cvtColor(img, gray, COLOR_BGR2GRAY);
-    GaussianBlur(gray, gray, Size(3, 3), 0.0);
-    
-    Mat blackHat = gray.clone();
-    morphologyEx(gray, blackHat, MORPH_BLACKHAT, rectKernel);
-    
-    Mat gradX = blackHat.clone();
-    Sobel(blackHat, gradX, CV_32F, 1, 0, -1);
-    absdiff(gradX, Mat::zeros(gradX.rows, gradX.cols, CV_32F), gradX);
-    double minVal, maxVal;
-    minMaxLoc(gradX, &minVal, &maxVal);
-    
-    Mat gradXFloat = gradX.clone();
-    Mat maskMin(gradXFloat.rows, gradXFloat.cols, CV_32F, Scalar(minVal));
-    subtract(gradXFloat, maskMin, gradXFloat);
-    Mat maskDiff(gradXFloat.rows, gradXFloat.cols, CV_32F, Scalar(maxVal - minVal));
-    divide(gradXFloat, maskDiff, gradXFloat);
-    Mat mask255(gradXFloat.rows, gradXFloat.cols, CV_32F, Scalar(255.0));
-    multiply(gradXFloat, mask255, gradXFloat);
-    gradXFloat.convertTo(gradX, CV_8UC1);
-    
-    morphologyEx(gradX, gradX, MORPH_CLOSE, rectKernel);
-    
-    Mat thresh;
-    threshold(gradX, thresh, 0.0, 255.0, THRESH_BINARY | THRESH_OTSU);
-    morphologyEx(thresh, thresh, MORPH_CLOSE, sqKernel);
-    Mat nullKernel;
-    erode(thresh, thresh, nullKernel, Point(-1, -1), 4);
-    
-    // padding
-    int width = thresh.cols;
-    int height = thresh.rows;
-    int p = (int) (width * 0.01);
-    for (int i = 0; i < height; i++) {
-        for (int j = 0; j < p; j++) {
-            thresh.at<uchar>(i, j, 0) = 0;
-        }
-        for (int l = width - p; l < width; l++) {
-            thresh.at<uchar>(i, l, 0) = 0;
-        }
-    }
-    // end padding
-    
-    // denoise - clear all connections from mrz to others horizontal
-    for (int i = 0; i < height; i++) {
-        int countWhite = 0;
-        int startIdx = 0;
-        for (int j = 0; j < width; j++) {
-            if (thresh.at<uchar>(i, j, 0) == 255) { // white
-                countWhite += 1;
-            } else if (countWhite > 0 && countWhite < 80) {
-                for (int k = startIdx; k < j + 1; k++) {
-                    thresh.at<uchar>(i, k, 0) = 0;
-                }
-                startIdx = j;
-                countWhite = 0;
-            }
-        }
-    }
-    // end denoise
-    
-    // connect nearby contours
-    Mat denoiseKernel = Mat::ones(3, 3, CV_8U);
-    dilate(thresh, thresh, denoiseKernel);
-    // end connect
-    
-    // find contours in the threshold image and sort them by their size
-    vector<vector<Point>> contours;
-    vector<Vec4i> hierarchy;
-    findContours(thresh.clone(), contours, hierarchy, RETR_LIST, CHAIN_APPROX_SIMPLE, Point(0, 0));
+    vector<vector<Point>> contours = getContours(img, rectKernel, sqKernel, 1.5);
     sort(contours.begin(), contours.end(), sortContours);
     // end contours finding
     
@@ -112,8 +42,8 @@ Mat findMRZ(Mat original) {
         box0f = sortVertices(box0f);
         vector<Point> box0 = vecf2vec(box0f);
         
-        double w0 = rect0.size.width;
-        double h0 = rect0.size.height;
+        double w0 = max(rect0.size.width, rect0.size.height);
+        double h0 = min(rect0.size.width, rect0.size.height);
         double angle = rect0.angle;
         
         vector<vector<Point>> boxList;
@@ -123,13 +53,13 @@ Mat findMRZ(Mat original) {
             
             RotatedRect rect1 = minAreaRect(cnt1);
             Point2f box1a[4];
-            rect0.points(box1a);
+            rect1.points(box1a);
             vector<Point2f> box1f = arr2Vec2f(box1a);
             box1f = sortVertices(box1f);
             vector<Point> box1 = vecf2vec(box1f);
             
-            double w1 = rect1.size.width;
-            double h1 = rect1.size.height;
+            double w1 = max(rect1.size.width, rect1.size.height);
+            double h1 = min(rect1.size.width, rect1.size.height);
             
             if (abs(w1 - w0) / w0 < 0.1 && abs(h1 - h0) / h0 < 0.2) {
                 if (box0[1].y < box1[1].y) {
@@ -184,7 +114,7 @@ Mat findMRZ(Mat original) {
     }
     
     // end detect
-    return thresh;
+    return img;
 }
 
 Mat cropMinAreaRect(Mat image, RotatedRect rect) {
@@ -357,3 +287,98 @@ vector<Point2f> vec2vecf(vector<Point> src) {
     }
     return res;
 }
+
+Mat adjustGamma(Mat image, float gammar) {
+    Mat lookUpTable(1, 256, CV_8U);
+    uchar* p = lookUpTable.ptr();
+    
+    float invGamma = 1.0 / gammar;
+    for( int i = 0; i < 256; i++) {
+        p[i] = pow(i / 255.0, invGamma) * 255;
+    }
+    Mat res;
+    LUT(image, lookUpTable, res);
+    return res;
+}
+
+vector<vector<Point>> getContours(Mat image, Mat rectKernel, Mat sqKernel, float gammar) {
+    vector<vector<Point>> contours;
+    while (contours.size() == 0 && gammar > 0) {
+        Mat img = adjustGamma(image, gammar);
+        
+        Mat gray = img.clone();
+        cvtColor(img, gray, COLOR_BGR2GRAY);
+        GaussianBlur(gray, gray, Size(3, 3), 0.0);
+        
+        Mat blackHat = gray.clone();
+        morphologyEx(gray, blackHat, MORPH_BLACKHAT, rectKernel);
+        
+        Mat gradX = blackHat.clone();
+        Sobel(blackHat, gradX, CV_32F, 1, 0, -1);
+        absdiff(gradX, Mat::zeros(gradX.rows, gradX.cols, CV_32F), gradX);
+        double minVal, maxVal;
+        minMaxLoc(gradX, &minVal, &maxVal);
+        
+        Mat gradXFloat = gradX.clone();
+        Mat maskMin(gradXFloat.rows, gradXFloat.cols, CV_32F, Scalar(minVal));
+        subtract(gradXFloat, maskMin, gradXFloat);
+        Mat maskDiff(gradXFloat.rows, gradXFloat.cols, CV_32F, Scalar(maxVal - minVal));
+        divide(gradXFloat, maskDiff, gradXFloat);
+        Mat mask255(gradXFloat.rows, gradXFloat.cols, CV_32F, Scalar(255.0));
+        multiply(gradXFloat, mask255, gradXFloat);
+        gradXFloat.convertTo(gradX, CV_8UC1);
+        
+        morphologyEx(gradX, gradX, MORPH_CLOSE, rectKernel);
+        
+        Mat thresh;
+        threshold(gradX, thresh, 0.0, 255.0, THRESH_BINARY | THRESH_OTSU);
+        morphologyEx(thresh, thresh, MORPH_CLOSE, sqKernel);
+        Mat nullKernel;
+        erode(thresh, thresh, nullKernel, Point(-1, -1), 4);
+        
+        // padding
+        int width = thresh.cols;
+        int height = thresh.rows;
+        int p = (int) (width * 0.01);
+        for (int i = 0; i < height; i++) {
+            for (int j = 0; j < p; j++) {
+                thresh.at<uchar>(i, j, 0) = 0;
+            }
+            for (int l = width - p; l < width; l++) {
+                thresh.at<uchar>(i, l, 0) = 0;
+            }
+        }
+        // end padding
+        
+        // denoise - clear all connections from mrz to others horizontal
+        for (int i = 0; i < height; i++) {
+            int countWhite = 0;
+            int startIdx = 0;
+            for (int j = 0; j < width; j++) {
+                if (thresh.at<uchar>(i, j, 0) == 255) { // white
+                    countWhite += 1;
+                } else if (countWhite > 0 && countWhite < 80) {
+                    for (int k = startIdx; k < j + 1; k++) {
+                        thresh.at<uchar>(i, k, 0) = 0;
+                    }
+                    startIdx = j;
+                    countWhite = 0;
+                }
+            }
+        }
+        // end denoise
+        
+        // connect nearby contours
+        Mat denoiseKernel = Mat::ones(3, 3, CV_8U);
+        dilate(thresh, thresh, denoiseKernel);
+        // end connect
+        
+        // find contours in the threshold image and sort them by their size
+        vector<Vec4i> hierarchy;
+        findContours(thresh.clone(), contours, hierarchy, RETR_LIST, CHAIN_APPROX_SIMPLE, Point(0, 0));
+        
+        gammar -= 0.5;
+    }
+    return contours;
+}
+

@@ -33,5 +33,7 @@ Mat cropMinAreaRect(Mat, RotatedRect);
 vector<Point2f> arr2Vec2f(Point2f[]);
 vector<Point> vecf2vec(vector<Point2f>);
 vector<Point2f> vec2vecf(vector<Point>);
+Mat adjustGamma(Mat, float);
+vector<vector<Point>> getContours(Mat, Mat, Mat, float);
 
 #endif /* MrzHelper_hpp */
