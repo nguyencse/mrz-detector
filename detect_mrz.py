@@ -82,6 +82,85 @@ def subimage(image, minRect):
 
 	return image
 
+def get_contours(image, gammar = 1.5):
+
+	cnts = []
+
+	while len(cnts) == 0 and gammar > 0:
+		# img = utils.keep_text(image)
+		img = utils.correct_grammar(image, gamma=gammar)
+		cv2.imshow('after-correct-gammar', image)
+
+		gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+		# smooth the image using a 3x3 Gaussian, then apply the blackhat
+		# morphological operator to find dark regions on a light background
+		gray = cv2.GaussianBlur(gray, (3, 3), 0)
+		blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, rectKernel)
+
+		# compute the Scharr gradient of the blackhat image and scale the
+		# result into the range [0, 255]
+		gradX = cv2.Sobel(blackhat, ddepth=cv2.CV_32F, dx=1, dy=0, ksize=-1)
+		gradX = np.absolute(gradX)
+		(minVal, maxVal) = (np.min(gradX), np.max(gradX))
+		gradX = (255 * ((gradX - minVal) / (maxVal - minVal))).astype("uint8")
+
+		# apply a closing operation using the rectangular kernel to close
+		# gaps in between letters -- then apply Otsu's thresholding method
+		gradX = cv2.morphologyEx(gradX, cv2.MORPH_CLOSE, rectKernel)
+		thresh = cv2.threshold(
+			gradX, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+
+		# perform another closing operation, this time using the square
+		# kernel to close gaps between lines of the MRZ, then perform a
+		# serieso of erosions to break apart connected components
+		thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, sqKernel)
+		thresh = cv2.erode(thresh, None, iterations=4)
+
+		# during thresholding, it's possible that border pixels were
+		# included in the thresholding, so let's set 5% of the left and
+		# right borders to zero
+		p = int(thresh.shape[1] * 0.01)
+		thresh[:, 0:p] = 0
+		thresh[:, thresh.shape[1] - p:] = 0
+
+		# print("image.shape = ", image.shape)
+		# print("p = ", p)
+
+		# cv2.imshow("Test", thresh)
+
+		# denoise - clear all connections from mrz to others horizontal
+		for i in range(thresh.shape[0]):  # traverses through height of the image
+			countWhite = 0
+			startIndex = 0
+			# traverses through width of the image
+			for j in range(thresh.shape[1]):
+				if thresh[i][j] == 255:  # 255 -> white
+					countWhite += 1
+				else:
+					if countWhite > 0 and countWhite < 80:
+						for k in range(startIndex, j + 1):
+							thresh[i][k] = 0
+					startIndex = j
+					countWhite = 0
+
+		cv2.imshow("thresh-after", thresh)
+
+		# connect nearby contours
+		denoiseKernel = np.ones((3, 3), np.uint8)
+		thresh = cv2.dilate(thresh, denoiseKernel, iterations=4)
+
+		# cv2.imshow("Denoise", thresh)
+
+		# find contours in the thresholded image and sort them by their size
+		cnts = cv2.findContours(
+			thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+		cnts = imutils.grab_contours(cnts)
+		cnts = sorted(cnts, key=lambda ctr: cv2.boundingRect(ctr)[2], reverse=True)
+		gammar -= 0.5
+	return cnts
+
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-i", "--images", required=True,help="path to images directory")
@@ -106,80 +185,15 @@ for imagePath in paths.list_images(args["images"]):
 
 	image = cv2.imread(imagePath)
 	image = imutils.resize(image, height=600)
-	gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-	# smooth the image using a 3x3 Gaussian, then apply the blackhat
-	# morphological operator to find dark regions on a light background
-	gray = cv2.GaussianBlur(gray, (3, 3), 0)
-	blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, rectKernel)
-
-	# compute the Scharr gradient of the blackhat image and scale the
-	# result into the range [0, 255]
-	gradX = cv2.Sobel(blackhat, ddepth=cv2.CV_32F, dx=1, dy=0, ksize=-1)
-	gradX = np.absolute(gradX)
-	(minVal, maxVal) = (np.min(gradX), np.max(gradX))
-	gradX = (255 * ((gradX - minVal) / (maxVal - minVal))).astype("uint8")
-
-	# apply a closing operation using the rectangular kernel to close
-	# gaps in between letters -- then apply Otsu's thresholding method
-	gradX = cv2.morphologyEx(gradX, cv2.MORPH_CLOSE, rectKernel)
-	thresh = cv2.threshold(
-		gradX, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-
-	# perform another closing operation, this time using the square
-	# kernel to close gaps between lines of the MRZ, then perform a
-	# serieso of erosions to break apart connected components
-	thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, sqKernel)
-	thresh = cv2.erode(thresh, None, iterations=4)
-
-	# during thresholding, it's possible that border pixels were
-	# included in the thresholding, so let's set 5% of the left and
-	# right borders to zero
-	p = int(thresh.shape[1] * 0.01)
-	thresh[:, 0:p] = 0
-	thresh[:, thresh.shape[1] - p:] = 0
-
-	# print("image.shape = ", image.shape)
-	# print("p = ", p)
-
-	# cv2.imshow("Test", thresh)
-
-	# denoise - clear all connections from mrz to others horizontal
-	for i in range(thresh.shape[0]):  # traverses through height of the image
-		countWhite = 0
-		startIndex = 0
-		# traverses through width of the image
-		for j in range(thresh.shape[1]):
-			if thresh[i][j] == 255:  # 255 -> white
-				countWhite += 1
-			else:
-				if countWhite > 0 and countWhite < 80:
-					for k in range(startIndex, j + 1):
-						thresh[i][k] = 0
-				startIndex = j
-				countWhite = 0
-
-	cv2.imshow("thresh-after", thresh)
-
-	# connect nearby contours
-	denoiseKernel = np.ones((3, 3), np.uint8)
-	thresh = cv2.dilate(thresh, denoiseKernel, iterations=4)
-
-	# cv2.imshow("Denoise", thresh)
-
-	# find contours in the thresholded image and sort them by their size
-	cnts = cv2.findContours(
-		thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-	cnts = imutils.grab_contours(cnts)
-	cnts = sorted(cnts, key=lambda ctr: cv2.boundingRect(ctr)[2], reverse=True)
+	
+	cnts = get_contours(image)
 
 	newCnts = []
 	for c in cnts:
 		(x, y, w, h) = cv2.boundingRect(c)
 		if w / h > 6.0:
 			newCnts.append(c)
-		print('width:', w)
+		# print('width:', w)
 	cnts = newCnts
 
 	print('len(cnts) = ', len(cnts))
@@ -196,8 +210,8 @@ for imagePath in paths.list_images(args["images"]):
 		box0 = cv2.boxPoints(rect0)
 		box0 = np.int0(box0)
 		box0 = sortBox(box0)
-		w0 = rect0[1][0]
-		h0 = rect0[1][1]
+		w0 = max(rect0[1][0], rect0[1][1])
+		h0 = min(rect0[1][0], rect0[1][1])
 		angle = rect0[2]
 		print('rect0 = ', rect0)
 		print('box0 = ', box0)
@@ -208,8 +222,8 @@ for imagePath in paths.list_images(args["images"]):
 			box1 = cv2.boxPoints(rect1)
 			box1 = np.int0(box1)
 			box1 = sortBox(box1)
-			w1 = rect1[1][0]
-			h1 = rect1[1][1]
+			w1 = max(rect1[1][0], rect1[1][1])
+			h1 = min(rect1[1][0], rect1[1][1])
 			print('box1 = ', box1)
 
 			print('abs(w1 - w0) / w0 = ', abs(w1 - w0) / w0)
@@ -290,30 +304,8 @@ for imagePath in paths.list_images(args["images"]):
 		roi = subimage(image, minRect)
 		cv2.drawContours(image, [box], 0, (0, 255, 0), 1)
 
-		# # show the output images
-		cv2.imshow("Image", image)
+		# show the output images
 		cv2.imshow("ROI", roi)
-		# print('recognized roi = ', utils.recognizeText(roi))
-		# cv2.imwrite('./rois/roi' + str(counter) +'.jpg', roi)
-		# print('recognized roi = ', utils.recognizeText(roi))
-
-		# sharpened_image = utils.unsharp_mask(roi)
-		# cv2.imwrite('sharpened-image.jpg', sharpened_image)
-		# print('recognized sharpened = ', utils.recognizeText(sharpened_image))
-
-		# unshadow_image = utils.remove_shadow(roi); 
-		# cv2.imwrite('unshadow-image.jpg', unshadow_image)
-		# print('recognized shadow = ', utils.recognizeText(unshadow_image))
-
-		# meanc = utils.mean_c(roi)
-		# cv2.imwrite('meanc-image.jpg', meanc)
-		# print('recognized meanc = ', utils.recognizeText(meanc))
-
-		# remove_noise = utils.remove_noise(roi)
-		# cv2.imwrite('remove-noise-image.jpg', remove_noise)
-		# print('remove noise = ', utils.recognizeText(remove_noise))
-
-		# cv2.imshow('remove_noise', remove_noise)
 
 		cv2.waitKey(0)
 		cv2.destroyAllWindows()
